@@ -1,0 +1,13 @@
+query CharacterStats {
+  characterStats {
+    totalCount
+    byStatus {
+      status
+      count
+    }
+    byGender {
+      gender
+      count
+    }
+  }
+}

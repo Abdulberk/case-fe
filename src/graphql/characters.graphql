@@ -1,0 +1,18 @@
+query Characters($filter: CharactersFilterInput, $pagination: PaginationInput, $sort: CharacterSortInput) {
+  characters(filter: $filter, pagination: $pagination, sort: $sort) {
+    items {
+      id
+      image
+      name
+      status
+      gender
+      description
+    }
+    totalCount
+    pageInfo {
+      skip
+      take
+      hasNextPage
+    }
+  }
+}
