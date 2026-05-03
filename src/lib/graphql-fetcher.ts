@@ -6,18 +6,41 @@ export function fetcher<TData, TVariables>(
   variables?: TVariables,
 ): () => Promise<TData> {
   return async () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // JWT token varsa otomatik ekle
+    const token =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('accessToken')
+        : null;
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables }),
     });
 
     const json = await response.json();
 
     if (json.errors) {
-      throw new Error(
-        json.errors.map((e: { message: string }) => e.message).join(', '),
-      );
+      const message = json.errors
+        .map((e: { message: string }) => e.message)
+        .join(', ');
+
+      // Auth hataları — token'ı temizle ve login'e yönlendir
+      if (message.includes('Unauthorized')) {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+
+      throw new Error(message);
     }
 
     return json.data;

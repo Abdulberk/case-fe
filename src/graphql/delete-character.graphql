@@ -1,0 +1,6 @@
+mutation DeleteCharacter($id: ID!) {
+  deleteCharacter(id: $id) {
+    id
+    success
+  }
+}

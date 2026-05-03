@@ -1,188 +1,115 @@
-# Frontend Implementation Plan
+# Frontend Auth Migration Guide
 
-This backend exposes a single GraphQL endpoint. The frontend should be a
-**separate Next.js App Router** application. All filtering, searching, and
-pagination **must** be handled server-side via the GraphQL API — no client-side
-filtering.
+## Özet
 
----
-
-## Backend API
-
-- **GraphQL endpoint:** `http://localhost:4000/graphql`
-- **Method:** `POST`
-- **Health check:** `GET http://localhost:4000/health`
-- **Rate limit:** 100 requests per minute per client
+Backend artık **JWT tabanlı authentication + role-based authorization** kullanıyor.
+Eski `x-api-key` header yaklaşımı **kaldırıldı**. Admin mutation'ları artık
+`Authorization: Bearer <jwt_token>` header'ı ile ADMIN rolüne sahip bir kullanıcının
+JWT token'ı gerektirir.
 
 ---
 
-## GraphQL Schema
+## Ne Değişti? (Backend Değişiklikleri)
 
-### Queries
-
-The backend exposes **3 queries:**
+### 1. Yeni GraphQL Endpoint'ler
 
 ```graphql
+type Mutation {
+  # Yeni — Public (token gerekmez)
+  register(input: RegisterInput!): AuthResponse!
+  login(input: LoginInput!): AuthResponse!
+}
+
 type Query {
-  character(id: ID!): Character!
-  characters(filter: CharactersFilterInput, pagination: PaginationInput, sort: CharacterSortInput): CharacterConnection!
-  characterStats: CharacterStats!
+  # Yeni — Authenticated (herhangi bir rol)
+  me: User!
 }
 ```
 
-### Input Types
+### 2. Admin Mutation'ları Artık JWT + ADMIN Role Gerektiriyor
 
 ```graphql
-input CharactersFilterInput {
-  status: CharacterStatus    # optional
-  gender: CharacterGender    # optional
-  search: String             # optional, max 120 chars, case-insensitive match on name + description
-}
+# Eskiden: x-api-key header gerekiyordu
+# Şimdi: Authorization: Bearer <admin_jwt_token> header gerekiyor
 
-input PaginationInput {
-  skip: Int = 0    # min 0
-  take: Int = 20   # min 1, max 50 (capped server-side)
-}
-
-input CharacterSortInput {
-  field: CharacterSortField = NAME
-  direction: SortDirection = ASC
-}
+createCharacter(input: CreateCharacterInput!): Character!   # ADMIN only
+updateCharacter(id: ID!, input: UpdateCharacterInput!): Character!  # ADMIN only
+deleteCharacter(id: ID!): DeleteResult!                     # ADMIN only
 ```
 
-### Enums
+### 3. Query'ler Hâlâ Public
 
 ```graphql
-enum CharacterStatus {
-  ALIVE
-  DEAD
-  UNKNOWN
-}
-
-enum CharacterGender {
-  MALE
-  FEMALE
-  UNKNOWN
-}
-
-enum CharacterSortField {
-  NAME
-  STATUS
-  GENDER
-}
-
-enum SortDirection {
-  ASC
-  DESC
-}
+characters(...)        # Public — token gerekmez
+character(id: ID!)     # Public — token gerekmez
+characterStats         # Public — token gerekmez
 ```
 
-### Response Types
+### 4. Yeni Type'lar
 
 ```graphql
-type CharacterConnection {
-  items: [Character!]!
-  totalCount: Int!
-  pageInfo: PageInfo!
+type AuthResponse {
+  accessToken: String!    # JWT token
+  user: User!
 }
 
-type Character {
+type User {
   id: ID!
-  image: String!        # Avatar URL (https://i.pravatar.cc/512?u=...)
+  email: String!
   name: String!
-  status: CharacterStatus!
-  gender: CharacterGender!
-  description: String!
+  role: UserRole!         # USER veya ADMIN
+  createdAt: DateTime!
+  updatedAt: DateTime!
 }
 
-type PageInfo {
-  skip: Int!
-  take: Int!
-  hasNextPage: Boolean!
+enum UserRole {
+  USER
+  ADMIN
 }
 
-type CharacterStats {
-  totalCount: Int!
-  byStatus: [StatusCount!]!
-  byGender: [GenderCount!]!
+input RegisterInput {
+  email: String!      # Geçerli email
+  password: String!   # Min 6 karakter
+  name: String!       # Zorunlu
 }
 
-type StatusCount {
-  status: CharacterStatus!
-  count: Int!
-}
-
-type GenderCount {
-  gender: CharacterGender!
-  count: Int!
+input LoginInput {
+  email: String!
+  password: String!
 }
 ```
 
----
+### 5. Hata Mesajları
 
-## Required Tech Stack
-
-| Tool | Purpose |
+| Durum | Hata Mesajı |
 |---|---|
-| **Next.js** (App Router) | Framework, routing |
-| **GraphQL** | API communication |
-| **GraphQL Code Generator** | Generate typed queries, hooks, and TypeScript types from the schema |
-| **@tanstack/react-query** | Data fetching, caching, loading/error states |
-| **nuqs** | Sync filter/search/page state with URL query parameters |
+| Kayıtlı email ile register | `"Email already registered"` |
+| Yanlış email/şifre ile login | `"Invalid email or password"` |
+| Token olmadan korumalı endpoint | `"Unauthorized"` |
+| USER rolü ile admin mutation | `"You do not have permission to perform this action"` |
+| Süresi dolmuş/geçersiz token | `"Unauthorized"` |
 
 ---
 
-## GraphQL Code Generator Setup
+## Frontend'de Yapılması Gereken Değişiklikler
 
-Create `codegen.ts` at the project root:
+### 1. `src/lib/admin-fetcher.ts` → SİLİN veya DEĞİŞTİRİN
 
+**Eski** (`x-api-key` ile):
 ```typescript
-import type { CodegenConfig } from '@graphql-codegen/cli';
+// SİLİN — artık kullanılmıyor
+const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY || '';
 
-const config: CodegenConfig = {
-  schema: 'http://localhost:4000/graphql',
-  documents: ['src/**/*.graphql', 'src/**/*.ts'],
-  generates: {
-    'src/generated/graphql.ts': {
-      plugins: [
-        'typescript',
-        'typescript-operations',
-        'typescript-react-query',
-      ],
-      config: {
-        reactQueryVersion: 5,
-        fetcher: {
-          func: '../lib/graphql-fetcher#fetcher',
-        },
-        exposeQueryKeys: true,
-        exposeFetcher: true,
-      },
-    },
+export async function adminMutationFetcher<TData, TVariables>(...) {
+  headers: {
+    'x-api-key': ADMIN_API_KEY,  // ❌ Artık çalışmıyor
   },
-};
-
-export default config;
-```
-
-Required dev dependencies:
-
-```bash
-npm install -D @graphql-codegen/cli @graphql-codegen/typescript @graphql-codegen/typescript-operations @graphql-codegen/typescript-react-query
-```
-
-Add script to `package.json`:
-
-```json
-{
-  "scripts": {
-    "codegen": "graphql-codegen --config codegen.ts"
-  }
 }
 ```
 
-### GraphQL Fetcher (`src/lib/graphql-fetcher.ts`)
-
+**Yeni** — Tek bir fetcher yeterli, JWT token otomatik eklenir:
 ```typescript
+// src/lib/graphql-fetcher.ts — güncellenmiş
 const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql';
 
 export function fetcher<TData, TVariables>(
@@ -190,16 +117,38 @@ export function fetcher<TData, TVariables>(
   variables?: TVariables,
 ): () => Promise<TData> {
   return async () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // JWT token varsa otomatik ekle
+    const token = typeof window !== 'undefined'
+      ? localStorage.getItem('accessToken')
+      : null;
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables }),
     });
 
     const json = await response.json();
 
     if (json.errors) {
-      throw new Error(json.errors.map((e: { message: string }) => e.message).join(', '));
+      const message = json.errors.map((e: { message: string }) => e.message).join(', ');
+
+      // Auth hataları — token'ı temizle ve login'e yönlendir
+      if (message.includes('Unauthorized')) {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+
+      throw new Error(message);
     }
 
     return json.data;
@@ -207,258 +156,545 @@ export function fetcher<TData, TVariables>(
 }
 ```
 
-### Query Documents (`src/graphql/`)
+### 2. `.env.local` Değişiklikleri
 
-**`characters.graphql`** — Character list with filters, pagination, and sorting:
-
-```graphql
-query Characters($filter: CharactersFilterInput, $pagination: PaginationInput, $sort: CharacterSortInput) {
-  characters(filter: $filter, pagination: $pagination, sort: $sort) {
-    items {
-      id
-      image
-      name
-      status
-      gender
-      description
-    }
-    totalCount
-    pageInfo {
-      skip
-      take
-      hasNextPage
-    }
-  }
-}
-```
-
-**`character.graphql`** — Single character detail by ID:
-
-```graphql
-query Character($id: ID!) {
-  character(id: $id) {
-    id
-    image
-    name
-    status
-    gender
-    description
-  }
-}
-```
-
-**`character-stats.graphql`** — Aggregate statistics for dashboard:
-
-```graphql
-query CharacterStats {
-  characterStats {
-    totalCount
-    byStatus {
-      status
-      count
-    }
-    byGender {
-      gender
-      count
-    }
-  }
-}
-```
-
----
-
-## URL State Contract (nuqs)
-
-| URL Param | Maps to | Type | Notes |
-|---|---|---|---|
-| `q` | `filter.search` | `string` | Free text, debounced ~300ms |
-| `status` | `filter.status` | `CharacterStatus` | `ALIVE`, `DEAD`, or `UNKNOWN` |
-| `gender` | `filter.gender` | `CharacterGender` | `MALE`, `FEMALE`, or `UNKNOWN` |
-| `page` | pagination calculation | `number` | 1-based page number, default `1` |
-| `sort` | `sort.field` | `CharacterSortField` | `NAME`, `STATUS`, or `GENDER` |
-| `dir` | `sort.direction` | `SortDirection` | `ASC` or `DESC` |
-
-### Pagination Logic
-
-- Use `take = 12` (cards per page).
-- Compute `skip = (page - 1) * 12`.
-- Compute total pages: `Math.ceil(totalCount / 12)`.
-- **Reset `page` to `1`** whenever `q`, `status`, or `gender` changes.
-
-### Building GraphQL Variables from URL
-
-```typescript
-// Omit undefined/null values from filter — don't send empty filters
-const variables = {
-  filter: {
-    ...(q ? { search: q } : {}),
-    ...(status ? { status } : {}),
-    ...(gender ? { gender } : {}),
-  },
-  pagination: {
-    skip: (page - 1) * 12,
-    take: 12,
-  },
-  sort: {
-    field: sort || 'NAME',
-    direction: dir || 'ASC',
-  },
-};
-
-// If filter object is empty, omit it entirely or pass undefined
-```
-
----
-
-## UI Requirements
-
-### Layout
-
-- Clean, modern, responsive design.
-- Use a **card grid** layout (e.g., CSS Grid or Tailwind grid).
-- Suggested: 1 column mobile, 2 columns tablet, 3-4 columns desktop.
-
-### Stats Dashboard (top of page, optional but impressive)
-
-Use `characterStats` query to show a summary bar above filters:
-- Total characters count
-- Status breakdown (e.g., "10 Alive · 8 Dead · 6 Unknown")
-- Gender breakdown
-- Can be simple badges, small bar chart, or number cards.
-
-### Character Card
-
-Each card must display:
-
-| Field | Display |
-|---|---|
-| `image` | Avatar image (square, rounded) |
-| `name` | Character name (bold/prominent) |
-| `status` | Badge/chip: `Alive` (green), `Dead` (red), `Unknown` (gray) |
-| `gender` | Badge/chip or text label |
-| `description` | Short text, truncated if needed |
-
-Cards should be **clickable** — navigate to a detail view (or show a modal) using
-the `character(id)` query.
-
-### Character Detail View
-
-When a card is clicked, show full character details using:
-
-```graphql
-query Character($id: ID!) {
-  character(id: $id) { ... }
-}
-```
-
-Options:
-- **Option A:** A modal/dialog overlay (simpler, stays on same page)
-- **Option B:** A separate page `/characters/[id]` using Next.js dynamic routes
-
-Handle the **not found** case — the backend returns a GraphQL error with
-`"Character with id "..." not found"` if the ID doesn't exist.
-
-### Filter Bar (above the grid)
-
-- **Search input:** Text input for `q`, with debounce (~300ms). Placeholder: "Search characters..."
-- **Status dropdown:** Options: `All` (clears filter), `Alive`, `Dead`, `Unknown`
-- **Gender dropdown:** Options: `All` (clears filter), `Male`, `Female`, `Unknown`
-- **Sort dropdown:** Options: `Name`, `Status`, `Gender` — maps to `CharacterSortField`
-- **Sort direction toggle:** ASC/DESC button or icon toggle
-- All filter/sort changes update URL via nuqs and trigger React Query refetch.
-
-### Pagination (below the grid)
-
-- Show current page and total pages.
-- Previous / Next buttons.
-- Disable Previous on page 1, disable Next when `hasNextPage` is false.
-
-### States
-
-| State | UI |
-|---|---|
-| **Loading** | Skeleton cards or spinner |
-| **Empty** | "No characters found" message with suggestion to clear filters |
-| **Error** | Error message with retry button |
-| **Data** | Card grid with pagination |
-
----
-
-## Suggested Project Structure
-
-```
-case-fe/
-├── src/
-│   ├── app/
-│   │   ├── layout.tsx              # Root layout with QueryClientProvider
-│   │   ├── page.tsx                # Main page (characters list + stats)
-│   │   ├── providers.tsx           # React Query provider (client component)
-│   │   └── characters/
-│   │       └── [id]/
-│   │           └── page.tsx        # Character detail page (optional)
-│   ├── components/
-│   │   ├── character-card.tsx      # Single character card (clickable)
-│   │   ├── character-grid.tsx      # Grid of character cards
-│   │   ├── character-detail.tsx    # Detail view / modal content
-│   │   ├── stats-bar.tsx           # Stats dashboard summary
-│   │   ├── filter-bar.tsx          # Search + status/gender dropdowns + sort
-│   │   ├── sort-controls.tsx       # Sort field + direction controls
-│   │   ├── pagination.tsx          # Page navigation
-│   │   ├── empty-state.tsx         # No results message
-│   │   ├── error-state.tsx         # Error with retry
-│   │   └── loading-skeleton.tsx    # Loading skeleton cards
-│   ├── generated/
-│   │   └── graphql.ts              # Auto-generated by codegen
-│   ├── graphql/
-│   │   ├── characters.graphql      # List query
-│   │   ├── character.graphql       # Detail query
-│   │   └── character-stats.graphql # Stats query
-│   ├── hooks/
-│   │   ├── use-characters.ts       # Custom hook: list + nuqs
-│   │   ├── use-character.ts        # Custom hook: single character by id
-│   │   └── use-character-stats.ts  # Custom hook: stats
-│   └── lib/
-│       └── graphql-fetcher.ts      # Fetch function for codegen
-├── codegen.ts
-├── .env.local
-├── package.json
-└── tsconfig.json
-```
-
----
-
-## Environment Variables
-
+**Kaldırılacak:**
 ```env
-# .env.local
+NEXT_PUBLIC_ADMIN_API_KEY=...   # ❌ Artık gerekli değil
+```
+
+**Kalacak:**
+```env
 NEXT_PUBLIC_GRAPHQL_URL=http://localhost:4000/graphql
 ```
 
+### 3. Yeni Dosyalar Oluşturun
+
+#### `src/lib/auth-store.ts` — Token/User yönetimi
+
+```typescript
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'USER' | 'ADMIN';
+}
+
+interface AuthState {
+  user: AuthUser | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+}
+
+export function setAuth(accessToken: string, user: AuthUser): void {
+  localStorage.setItem('accessToken', accessToken);
+  localStorage.setItem('user', JSON.stringify(user));
+}
+
+export function getAuth(): AuthState {
+  if (typeof window === 'undefined') {
+    return { user: null, token: null, isAuthenticated: false, isAdmin: false };
+  }
+
+  const token = localStorage.getItem('accessToken');
+  const userStr = localStorage.getItem('user');
+  const user: AuthUser | null = userStr ? JSON.parse(userStr) : null;
+
+  return {
+    user,
+    token,
+    isAuthenticated: !!token,
+    isAdmin: user?.role === 'ADMIN',
+  };
+}
+
+export function clearAuth(): void {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('user');
+}
+```
+
+#### `src/graphql/register.graphql`
+
+```graphql
+mutation Register($input: RegisterInput!) {
+  register(input: $input) {
+    accessToken
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+```
+
+#### `src/graphql/login.graphql`
+
+```graphql
+mutation Login($input: LoginInput!) {
+  login(input: $input) {
+    accessToken
+    user {
+      id
+      email
+      name
+      role
+    }
+  }
+}
+```
+
+#### `src/graphql/me.graphql`
+
+```graphql
+query Me {
+  me {
+    id
+    email
+    name
+    role
+    createdAt
+    updatedAt
+  }
+}
+```
+
+### 4. `src/generated/graphql.ts` — Yeniden Generate Edin
+
+Yeni mutation/query'leri ekledikten sonra codegen çalıştırın:
+
+```bash
+npm run codegen
+```
+
+Bu şu yeni type'ları ve hook'ları oluşturacak:
+- `RegisterInput`, `LoginInput`, `AuthResponse`, `User`, `UserRole`
+- `useRegisterMutation`, `useLoginMutation`, `useMeQuery`
+
+### 5. Auth Hook Oluşturun — `src/hooks/use-auth.ts`
+
+```typescript
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { setAuth, getAuth, clearAuth, AuthUser } from '../lib/auth-store';
+
+// Basit event-based state sync
+const AUTH_CHANGE_EVENT = 'auth-change';
+
+function notifyAuthChange() {
+  window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+}
+
+export function useAuth() {
+  const queryClient = useQueryClient();
+  const [authState, setAuthState] = useState(getAuth);
+
+  useEffect(() => {
+    const handler = () => setAuthState(getAuth());
+    window.addEventListener(AUTH_CHANGE_EVENT, handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener(AUTH_CHANGE_EVENT, handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
+
+  const login = useCallback((accessToken: string, user: AuthUser) => {
+    setAuth(accessToken, user);
+    notifyAuthChange();
+  }, []);
+
+  const logout = useCallback(() => {
+    clearAuth();
+    queryClient.clear();
+    notifyAuthChange();
+    window.location.href = '/';
+  }, [queryClient]);
+
+  return {
+    ...authState,
+    login,
+    logout,
+  };
+}
+```
+
+### 6. Login Sayfası — `src/app/login/page.tsx`
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useAuth } from '@/hooks/use-auth';
+import { fetcher } from '@/lib/graphql-fetcher';
+
+const LOGIN_MUTATION = `
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      accessToken
+      user { id email name role }
+    }
+  }
+`;
+
+export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const data = await fetcher<
+        { login: { accessToken: string; user: any } },
+        { input: { email: string; password: string } }
+      >(LOGIN_MUTATION, { input: { email, password } })();
+
+      login(data.login.accessToken, data.login.user);
+      router.push('/');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="w-full max-w-md space-y-4 p-8">
+        <h1 className="text-2xl font-bold">Login</h1>
+
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          required
+          className="w-full border rounded px-3 py-2"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          required
+          className="w-full border rounded px-3 py-2"
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+        >
+          {loading ? 'Logging in...' : 'Login'}
+        </button>
+
+        <p className="text-sm text-center">
+          Don't have an account?{' '}
+          <Link href="/register" className="text-blue-600 hover:underline">
+            Register
+          </Link>
+        </p>
+      </form>
+    </div>
+  );
+}
+```
+
+### 7. Register Sayfası — `src/app/register/page.tsx`
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useAuth } from '@/hooks/use-auth';
+import { fetcher } from '@/lib/graphql-fetcher';
+
+const REGISTER_MUTATION = `
+  mutation Register($input: RegisterInput!) {
+    register(input: $input) {
+      accessToken
+      user { id email name role }
+    }
+  }
+`;
+
+export default function RegisterPage() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const data = await fetcher<
+        { register: { accessToken: string; user: any } },
+        { input: { name: string; email: string; password: string } }
+      >(REGISTER_MUTATION, { input: { name, email, password } })();
+
+      login(data.register.accessToken, data.register.user);
+      router.push('/');
+    } catch (err: any) {
+      setError(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <form onSubmit={handleSubmit} className="w-full max-w-md space-y-4 p-8">
+        <h1 className="text-2xl font-bold">Register</h1>
+
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          required
+          className="w-full border rounded px-3 py-2"
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          required
+          className="w-full border rounded px-3 py-2"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password (min 6 characters)"
+          required
+          minLength={6}
+          className="w-full border rounded px-3 py-2"
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+        >
+          {loading ? 'Registering...' : 'Register'}
+        </button>
+
+        <p className="text-sm text-center">
+          Already have an account?{' '}
+          <Link href="/login" className="text-blue-600 hover:underline">
+            Login
+          </Link>
+        </p>
+      </form>
+    </div>
+  );
+}
+```
+
+### 8. Admin Sayfası — Auth Guard Ekleyin
+
+`src/app/admin/page.tsx` dosyasının başına auth kontrolü ekleyin:
+
+```tsx
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/use-auth';
+
+export default function AdminPage() {
+  const router = useRouter();
+  const { isAuthenticated, isAdmin } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+    if (!isAdmin) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, isAdmin, router]);
+
+  if (!isAuthenticated || !isAdmin) {
+    return <div>Loading...</div>;
+  }
+
+  // ... mevcut admin panel içeriği
+}
+```
+
+### 9. Header/Navbar — Auth Durumu Gösterin
+
+Header'a login/logout ve kullanıcı bilgisi ekleyin:
+
+```tsx
+'use client';
+
+import { useAuth } from '@/hooks/use-auth';
+import Link from 'next/link';
+
+export function AuthButtons() {
+  const { isAuthenticated, isAdmin, user, logout } = useAuth();
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex gap-2">
+        <Link href="/login" className="...">Login</Link>
+        <Link href="/register" className="...">Register</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm">{user?.name}</span>
+      {isAdmin && (
+        <Link href="/admin" className="...">Admin</Link>
+      )}
+      <button onClick={logout} className="...">Logout</button>
+    </div>
+  );
+}
+```
+
+### 10. Admin Mutation Hook'larını Güncelleyin
+
+**Eski** (admin-fetcher kullanıyordu):
+```typescript
+import { adminMutationFetcher } from '../lib/admin-fetcher';
+// ...
+mutationFn: (input) => adminMutationFetcher(MUTATION, { input }),
+```
+
+**Yeni** (normal fetcher — JWT otomatik eklenir):
+```typescript
+import { fetcher } from '../lib/graphql-fetcher';
+// ...
+mutationFn: (input) => fetcher(MUTATION, { input })(),
+```
+
+`src/generated/graphql.ts` yeniden generate edildiğinde hook'lar da güncellenecek.
+
 ---
 
-## Data Flow Summary
+## Adım Adım Migration Checklist
 
 ```
-URL params (nuqs) → React Query variables → GraphQL POST → Backend filters/sorts/paginates → Response → UI
-     ↑                                                                                                    |
-     └──────────────── User interacts with search/filters/sort/pagination ────────────────────────────────┘
+1. [ ] `src/lib/admin-fetcher.ts` dosyasını SİLİN
+2. [ ] `src/lib/graphql-fetcher.ts` dosyasını güncelleyin (JWT header ekleyin)
+3. [ ] `src/lib/auth-store.ts` dosyasını oluşturun
+4. [ ] `src/hooks/use-auth.ts` hook'unu oluşturun
+5. [ ] `.env.local` dosyasından `NEXT_PUBLIC_ADMIN_API_KEY` satırını kaldırın
+6. [ ] `src/graphql/register.graphql` oluşturun
+7. [ ] `src/graphql/login.graphql` oluşturun
+8. [ ] `src/graphql/me.graphql` oluşturun
+9. [ ] `npm run codegen` çalıştırın (yeni type'ları generate edin)
+10. [ ] `src/app/login/page.tsx` oluşturun
+11. [ ] `src/app/register/page.tsx` oluşturun
+12. [ ] `src/app/admin/page.tsx` başına auth guard ekleyin
+13. [ ] Header'a AuthButtons component'i ekleyin (login/logout/user info)
+14. [ ] Admin mutation hook'larında `adminMutationFetcher` → `fetcher` değiştirin
+15. [ ] `adminMutationFetcher` import'larını temizleyin
+16. [ ] Admin butonunu sadece ADMIN rolüne sahip kullanıcılara gösterin
 ```
-
-1. User types in search or selects a filter/sort → nuqs updates URL query params.
-2. Component reads params via nuqs hooks → builds GraphQL variables.
-3. React Query fetches with those variables (auto-refetch on variable change).
-4. Backend applies filters, search, sorting, and pagination server-side.
-5. Response renders cards in grid with pagination controls.
 
 ---
 
-## Key Rules
+## Test Etme
 
-1. **No client-side filtering.** All filtering/searching/sorting is done by the backend.
-2. **URL is the source of truth** for filter and sort state (nuqs).
-3. **Omit empty filters** — don't send `{ status: null }`, just omit the key.
-4. **Reset page to 1** when any filter or sort changes.
-5. **Debounce search** input to avoid excessive API calls.
-6. **Handle all states:** loading, error, empty, and data.
-7. **Use `character(id)` query** for detail views — handle 404/not-found errors.
-8. **Use `characterStats` query** to show aggregate data (dashboard).
+### 1. Register ile yeni kullanıcı oluşturun
+```
+POST http://localhost:4000/graphql
+
+mutation {
+  register(input: {
+    email: "admin@example.com"
+    password: "admin123"
+    name: "Admin User"
+  }) {
+    accessToken
+    user { id email name role }
+  }
+}
+```
+
+> Not: İlk kullanıcı USER rolüyle oluşturulur. ADMIN yapmak için
+> veritabanında doğrudan güncelleyin:
+> ```sql
+> UPDATE "User" SET role = 'ADMIN' WHERE email = 'admin@example.com';
+> ```
+> Veya Prisma Studio kullanın: `npx prisma studio`
+
+### 2. Login ile token alın
+```graphql
+mutation {
+  login(input: {
+    email: "admin@example.com"
+    password: "admin123"
+  }) {
+    accessToken
+    user { id email name role }
+  }
+}
+```
+
+### 3. Admin mutation'ları test edin
+```
+Headers:
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+
+mutation {
+  createCharacter(input: {
+    name: "Test Hero"
+    image: "https://example.com/hero.png"
+    description: "A test character for admin panel."
+  }) {
+    id name
+  }
+}
+```
+
+### 4. Yetki kontrolünü test edin
+- Token olmadan mutation → `"Unauthorized"` hatası
+- USER token ile mutation → `"You do not have permission to perform this action"` hatası
+- ADMIN token ile mutation → ✅ Başarılı
+
+---
+
+## Önemli Notlar
+
+1. **JWT Token süresi:** 7 gün (backend'de `JWT_EXPIRES_IN=7d` olarak ayarlı)
+2. **Password:** bcrypt ile hash'leniyor (12 rounds)
+3. **Token'da ne var:** `{ sub: userId, email, role }` — backend her request'te DB'den user'ı kontrol ediyor
+4. **`NEXT_PUBLIC_ADMIN_API_KEY` artık gerekli DEĞİL** — tamamen kaldırabilirsiniz
+5. **Public query'ler değişmedi** — `characters`, `character(id)`, `characterStats` hâlâ token olmadan çalışıyor
+6. **İlk ADMIN kullanıcı:** Register ile USER oluşturup DB'de role'ü ADMIN yapmanız gerekiyor (veya seed script'e ekleyebiliriz)

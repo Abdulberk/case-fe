@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Spinner } from '@/components/ui/spinner';
 import { useCharacters } from '@/hooks/use-characters';
-import { StatsBar } from './stats-bar';
 import { FilterBar } from './filter-bar';
 import { CharacterGrid } from './character-grid';
 import { Pagination } from './pagination';
@@ -48,11 +49,13 @@ export function CharactersPage() {
 
   return (
     <>
-      {/* Stats Dashboard */}
-      <StatsBar />
-
       {/* Filter Bar */}
-      <div className="mb-6">
+      <motion.div
+        className="mb-6"
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.1 }}
+      >
         <FilterBar
           search={search}
           status={status}
@@ -65,76 +68,124 @@ export function CharactersPage() {
           onSortChange={setSort}
           onDirectionChange={setDirection}
         />
-      </div>
+      </motion.div>
 
       {/* Results count bar */}
-      {!isLoading && !isError && totalCount > 0 && (
-        <div className="mb-5 flex items-center gap-3">
-          <p
-            className="text-sm"
-            style={{ color: 'var(--color-text-secondary)' }}
+      <AnimatePresence mode="wait">
+        {!isLoading && !isError && totalCount > 0 && (
+          <motion.div
+            className="mb-5 flex items-center gap-3"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.25 }}
+            key={`count-${totalCount}`}
           >
-            <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
-              {totalCount}
-            </span>{' '}
-            character{totalCount !== 1 ? 's' : ''} found
-          </p>
-
-          {/* Fetching indicator */}
-          {isFetching && (
-            <div
-              className="h-4 w-4 animate-spin rounded-full border-2"
-              style={{
-                borderColor: 'var(--color-border-secondary)',
-                borderTopColor: 'var(--color-accent)',
-              }}
-            />
-          )}
-        </div>
-      )}
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{totalCount}</span>{' '}
+              character{totalCount !== 1 ? 's' : ''} found
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Loading state */}
-      {isLoading && <LoadingSkeleton />}
+      <AnimatePresence mode="wait">
+        {isLoading && (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <LoadingSkeleton />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Error state */}
-      {isError && (
-        <ErrorState
-          message={error instanceof Error ? error.message : undefined}
-          onRetry={() => refetch()}
-        />
-      )}
+      <AnimatePresence mode="wait">
+        {isError && (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ErrorState
+              message={error instanceof Error ? error.message : undefined}
+              onRetry={() => refetch()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Empty state */}
-      {!isLoading && !isError && characters.length === 0 && (
-        <EmptyState
-          hasFilters={hasFilters}
-          onClearFilters={handleClearFilters}
-        />
-      )}
+      <AnimatePresence mode="wait">
+        {!isLoading && !isError && characters.length === 0 && (
+          <motion.div
+            key="empty"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <EmptyState
+              hasFilters={hasFilters}
+              onClearFilters={handleClearFilters}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Data state */}
       {!isLoading && !isError && characters.length > 0 && (
-        <>
+        <div className="relative">
+          {/* Refetch overlay spinner */}
+          <AnimatePresence>
+            {isFetching && (
+              <motion.div
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-[2px]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Spinner size={48} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <CharacterGrid
             characters={characters}
             onCardClick={setSelectedCharacterId}
           />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            hasNextPage={hasNextPage}
-            onPageChange={setPage}
-          />
-        </>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3, duration: 0.3 }}
+          >
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              hasNextPage={hasNextPage}
+              onPageChange={setPage}
+            />
+          </motion.div>
+        </div>
       )}
 
       {/* Character Detail Modal */}
-      {selectedCharacterId && (
-        <CharacterDetail
-          characterId={selectedCharacterId}
-          onClose={() => setSelectedCharacterId(null)}
-        />
-      )}
+      <AnimatePresence>
+        {selectedCharacterId && (
+          <CharacterDetail
+            characterId={selectedCharacterId}
+            onClose={() => setSelectedCharacterId(null)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

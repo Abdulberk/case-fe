@@ -1,4 +1,4 @@
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { fetcher } from '../lib/graphql-fetcher';
 
 export type Maybe<T> = T | null;
@@ -127,6 +127,81 @@ export const useCharactersQuery = <
   });
 };
 
+// ─── Auth Types ──────────────────────────────────────────
+
+export enum UserRole {
+  User = 'USER',
+  Admin = 'ADMIN',
+}
+
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AuthResponse = {
+  accessToken: string;
+  user: User;
+};
+
+export type RegisterInput = {
+  email: string;
+  password: string;
+  name: string;
+};
+
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+// ─── Auth Mutation Documents ─────────────────────────────
+
+export const RegisterDocument = `
+  mutation Register($input: RegisterInput!) {
+    register(input: $input) {
+      accessToken
+      user {
+        id
+        email
+        name
+        role
+      }
+    }
+  }
+`;
+
+export const LoginDocument = `
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      accessToken
+      user {
+        id
+        email
+        name
+        role
+      }
+    }
+  }
+`;
+
+export const MeDocument = `
+  query Me {
+    me {
+      id
+      email
+      name
+      role
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
 useCharactersQuery.getKey = (variables?: CharactersQueryVariables) =>
   variables === undefined ? ['Characters'] : ['Characters', variables];
 
@@ -233,3 +308,186 @@ export const useCharacterStatsQuery = <
 };
 
 useCharacterStatsQuery.getKey = () => ['CharacterStats'];
+
+// ─── Admin Mutation Input Types ──────────────────────────
+
+export type CreateCharacterInput = {
+  name: string;
+  image: string;
+  status?: InputMaybe<CharacterStatus>;
+  gender?: InputMaybe<CharacterGender>;
+  description: string;
+};
+
+export type UpdateCharacterInput = {
+  name?: InputMaybe<string>;
+  image?: InputMaybe<string>;
+  status?: InputMaybe<CharacterStatus>;
+  gender?: InputMaybe<CharacterGender>;
+  description?: InputMaybe<string>;
+};
+
+export type DeleteResult = {
+  id: string;
+  success: boolean;
+};
+
+// ─── Create Character Mutation ───────────────────────────
+
+export type CreateCharacterMutationVariables = Exact<{
+  input: CreateCharacterInput;
+}>;
+
+export type CreateCharacterMutation = {
+  createCharacter: Character;
+};
+
+export const CreateCharacterDocument = `
+  mutation CreateCharacter($input: CreateCharacterInput!) {
+    createCharacter(input: $input) {
+      id
+      image
+      name
+      status
+      gender
+      description
+    }
+  }
+`;
+
+export const useCreateCharacterMutation = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: UseMutationOptions<
+    CreateCharacterMutation,
+    TError,
+    CreateCharacterMutationVariables,
+    TContext
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    CreateCharacterMutation,
+    TError,
+    CreateCharacterMutationVariables,
+    TContext
+  >({
+    mutationFn: (variables) =>
+      fetcher<CreateCharacterMutation, CreateCharacterMutationVariables>(
+        CreateCharacterDocument,
+        variables,
+      )(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['Characters'] });
+      queryClient.invalidateQueries({ queryKey: ['CharacterStats'] });
+    },
+    ...options,
+  });
+};
+
+// ─── Update Character Mutation ───────────────────────────
+
+export type UpdateCharacterMutationVariables = Exact<{
+  id: string;
+  input: UpdateCharacterInput;
+}>;
+
+export type UpdateCharacterMutation = {
+  updateCharacter: Character;
+};
+
+export const UpdateCharacterDocument = `
+  mutation UpdateCharacter($id: ID!, $input: UpdateCharacterInput!) {
+    updateCharacter(id: $id, input: $input) {
+      id
+      image
+      name
+      status
+      gender
+      description
+    }
+  }
+`;
+
+export const useUpdateCharacterMutation = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: UseMutationOptions<
+    UpdateCharacterMutation,
+    TError,
+    UpdateCharacterMutationVariables,
+    TContext
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    UpdateCharacterMutation,
+    TError,
+    UpdateCharacterMutationVariables,
+    TContext
+  >({
+    mutationFn: (variables) =>
+      fetcher<UpdateCharacterMutation, UpdateCharacterMutationVariables>(
+        UpdateCharacterDocument,
+        variables,
+      )(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['Characters'] });
+      queryClient.invalidateQueries({ queryKey: ['CharacterStats'] });
+      queryClient.invalidateQueries({ queryKey: ['Character'] });
+    },
+    ...options,
+  });
+};
+
+// ─── Delete Character Mutation ───────────────────────────
+
+export type DeleteCharacterMutationVariables = Exact<{
+  id: string;
+}>;
+
+export type DeleteCharacterMutation = {
+  deleteCharacter: DeleteResult;
+};
+
+export const DeleteCharacterDocument = `
+  mutation DeleteCharacter($id: ID!) {
+    deleteCharacter(id: $id) {
+      id
+      success
+    }
+  }
+`;
+
+export const useDeleteCharacterMutation = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: UseMutationOptions<
+    DeleteCharacterMutation,
+    TError,
+    DeleteCharacterMutationVariables,
+    TContext
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    DeleteCharacterMutation,
+    TError,
+    DeleteCharacterMutationVariables,
+    TContext
+  >({
+    mutationFn: (variables) =>
+      fetcher<DeleteCharacterMutation, DeleteCharacterMutationVariables>(
+        DeleteCharacterDocument,
+        variables,
+      )(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['Characters'] });
+      queryClient.invalidateQueries({ queryKey: ['CharacterStats'] });
+    },
+    ...options,
+  });
+};

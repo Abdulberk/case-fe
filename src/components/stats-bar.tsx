@@ -1,11 +1,22 @@
 'use client';
 
+import { motion } from 'framer-motion';
 import { useCharacterStatsQuery } from '@/generated/graphql';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
-const statusConfig: Record<string, { label: string; dot: string }> = {
-  ALIVE: { label: 'Alive', dot: 'var(--color-status-alive)' },
-  DEAD: { label: 'Dead', dot: 'var(--color-status-dead)' },
-  UNKNOWN: { label: 'Unknown', dot: 'var(--color-status-unknown)' },
+const statusDotStyles: Record<string, string> = {
+  ALIVE: 'bg-[hsl(var(--status-alive))]',
+  DEAD: 'bg-[hsl(var(--status-dead))]',
+  UNKNOWN: 'bg-[hsl(var(--status-unknown))]',
+};
+
+const statusLabels: Record<string, string> = {
+  ALIVE: 'Alive',
+  DEAD: 'Dead',
+  UNKNOWN: 'Unknown',
 };
 
 const genderLabels: Record<string, string> = {
@@ -14,21 +25,40 @@ const genderLabels: Record<string, string> = {
   UNKNOWN: 'Unknown',
 };
 
+const containerVariants = {
+  hidden: { opacity: 0, y: -10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.4,
+      ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
+      staggerChildren: 0.05,
+    },
+  },
+};
+
+const chipVariants = {
+  hidden: { opacity: 0, scale: 0.8 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: {
+      type: 'spring' as const,
+      stiffness: 400,
+      damping: 25,
+    },
+  },
+};
+
 export function StatsBar() {
   const { data, isLoading } = useCharacterStatsQuery();
 
   if (isLoading) {
     return (
-      <div
-        className="mb-6 flex flex-wrap gap-3 p-4"
-        style={{
-          backgroundColor: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border-primary)',
-          borderRadius: 'var(--radius-lg)',
-        }}
-      >
+      <div className="mb-6 flex flex-wrap gap-3 rounded-lg border bg-card p-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="skeleton h-8 w-24" style={{ borderRadius: 'var(--radius-md)' }} />
+          <Skeleton key={i} className="h-8 w-24 rounded-md" />
         ))}
       </div>
     );
@@ -39,70 +69,46 @@ export function StatsBar() {
   const { totalCount, byStatus, byGender } = data.characterStats;
 
   return (
-    <div
-      className="mb-6 flex flex-wrap items-center gap-3 px-5 py-4"
-      style={{
-        backgroundColor: 'var(--color-bg-secondary)',
-        border: '1px solid var(--color-border-primary)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-sm)',
-      }}
+    <motion.div
+      className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border bg-card px-5 py-4"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
     >
       {/* Total */}
-      <div
-        className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold"
-        style={{
-          backgroundColor: 'var(--color-accent-light)',
-          color: 'var(--color-accent)',
-          borderRadius: 'var(--radius-md)',
-        }}
-      >
-        {totalCount} Total
-      </div>
+      <motion.div variants={chipVariants}>
+        <Badge className="bg-primary/10 text-primary hover:bg-primary/10 px-3 py-1.5 text-sm font-semibold">
+          {totalCount} Total
+        </Badge>
+      </motion.div>
 
-      <div className="h-4 w-px" style={{ backgroundColor: 'var(--color-border-primary)' }} />
+      <Separator orientation="vertical" className="h-4" />
 
       {/* Status breakdown */}
-      {byStatus.map(({ status, count }) => {
-        const cfg = statusConfig[status];
-        return (
-          <div
-            key={status}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium"
-            style={{
-              backgroundColor: 'var(--color-bg-tertiary)',
-              color: 'var(--color-text-secondary)',
-              borderRadius: 'var(--radius-md)',
-            }}
-          >
+      {byStatus.map(({ status, count }) => (
+        <motion.div key={status} variants={chipVariants}>
+          <Badge variant="secondary" className="gap-1.5 px-2.5 py-1.5 font-medium">
             <span
-              className="h-2 w-2"
-              style={{
-                backgroundColor: cfg?.dot,
-                borderRadius: 'var(--radius-full)',
-              }}
+              className={cn(
+                'h-2 w-2 rounded-full',
+                statusDotStyles[status],
+              )}
             />
-            {count} {cfg?.label}
-          </div>
-        );
-      })}
+            {count} {statusLabels[status]}
+          </Badge>
+        </motion.div>
+      ))}
 
-      <div className="h-4 w-px" style={{ backgroundColor: 'var(--color-border-primary)' }} />
+      <Separator orientation="vertical" className="h-4" />
 
       {/* Gender breakdown */}
       {byGender.map(({ gender, count }) => (
-        <div
-          key={gender}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium"
-          style={{
-            backgroundColor: 'var(--color-bg-tertiary)',
-            color: 'var(--color-text-secondary)',
-            borderRadius: 'var(--radius-md)',
-          }}
-        >
-          {count} {genderLabels[gender] ?? gender}
-        </div>
+        <motion.div key={gender} variants={chipVariants}>
+          <Badge variant="secondary" className="gap-1.5 px-2.5 py-1.5 font-medium">
+            {count} {genderLabels[gender] ?? gender}
+          </Badge>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }

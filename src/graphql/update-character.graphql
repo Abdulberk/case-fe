@@ -1,0 +1,10 @@
+mutation UpdateCharacter($id: ID!, $input: UpdateCharacterInput!) {
+  updateCharacter(id: $id, input: $input) {
+    id
+    image
+    name
+    status
+    gender
+    description
+  }
+}

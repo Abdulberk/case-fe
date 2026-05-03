@@ -1,32 +1,7 @@
 import Image from 'next/image';
 import type { Character } from '@/generated/graphql';
-
-const statusConfig: Record<string, { dot: string; bg: string; text: string; label: string }> = {
-  ALIVE: {
-    dot: 'var(--color-status-alive)',
-    bg: 'var(--color-status-alive-bg)',
-    text: 'var(--color-status-alive-text)',
-    label: 'Alive',
-  },
-  DEAD: {
-    dot: 'var(--color-status-dead)',
-    bg: 'var(--color-status-dead-bg)',
-    text: 'var(--color-status-dead-text)',
-    label: 'Dead',
-  },
-  UNKNOWN: {
-    dot: 'var(--color-status-unknown)',
-    bg: 'var(--color-status-unknown-bg)',
-    text: 'var(--color-status-unknown-text)',
-    label: 'Unknown',
-  },
-};
-
-const genderLabels: Record<string, string> = {
-  MALE: 'Male',
-  FEMALE: 'Female',
-  UNKNOWN: 'Unknown',
-};
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface CharacterCardProps {
   character: Character;
@@ -34,7 +9,29 @@ interface CharacterCardProps {
 }
 
 export function CharacterCard({ character, onClick }: CharacterCardProps) {
-  const status = statusConfig[character.status] ?? statusConfig.UNKNOWN;
+  const statusStyles: Record<string, string> = {
+    ALIVE: 'bg-[hsl(var(--status-alive-bg))] text-[hsl(var(--status-alive-text))]',
+    DEAD: 'bg-[hsl(var(--status-dead-bg))] text-[hsl(var(--status-dead-text))]',
+    UNKNOWN: 'bg-[hsl(var(--status-unknown-bg))] text-[hsl(var(--status-unknown-text))]',
+  };
+
+  const statusDotStyles: Record<string, string> = {
+    ALIVE: 'bg-[hsl(var(--status-alive))]',
+    DEAD: 'bg-[hsl(var(--status-dead))]',
+    UNKNOWN: 'bg-[hsl(var(--status-unknown))]',
+  };
+
+  const statusLabels: Record<string, string> = {
+    ALIVE: 'Alive',
+    DEAD: 'Dead',
+    UNKNOWN: 'Unknown',
+  };
+
+  const genderLabels: Record<string, string> = {
+    MALE: 'Male',
+    FEMALE: 'Female',
+    UNKNOWN: 'Unknown',
+  };
 
   return (
     <article
@@ -47,34 +44,15 @@ export function CharacterCard({ character, onClick }: CharacterCardProps) {
           onClick(character.id);
         }
       }}
-      className="group relative flex flex-col overflow-hidden transition-all duration-200"
-      style={{
-        cursor: onClick ? 'pointer' : 'default',
-        backgroundColor: 'var(--color-bg-secondary)',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--color-border-primary)',
-        boxShadow: 'var(--shadow-card)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)';
-        e.currentTarget.style.borderColor = 'var(--color-border-secondary)';
-        e.currentTarget.style.transform = 'translateY(-2px)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-card)';
-        e.currentTarget.style.borderColor = 'var(--color-border-primary)';
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
+      className={cn(
+        'group relative flex flex-col overflow-hidden rounded-lg border bg-card text-card-foreground transition-all duration-200',
+        'hover:shadow-sm hover:border-border/80 hover:-translate-y-0.5',
+        onClick && 'cursor-pointer',
+      )}
     >
       {/* Card Header with Avatar */}
       <div className="flex items-start gap-4 p-5">
-        <div
-          className="relative h-14 w-14 shrink-0 overflow-hidden"
-          style={{
-            borderRadius: 'var(--radius-full)',
-            boxShadow: '0 0 0 2px var(--color-border-primary)',
-          }}
-        >
+        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full ring-2 ring-border">
           <Image
             src={character.image}
             alt={character.name}
@@ -84,67 +62,47 @@ export function CharacterCard({ character, onClick }: CharacterCardProps) {
           />
           {/* Status indicator dot */}
           <div
-            className="absolute bottom-0 right-0 h-3.5 w-3.5"
-            style={{
-              backgroundColor: status.dot,
-              borderRadius: 'var(--radius-full)',
-              boxShadow: '0 0 0 2px var(--color-bg-secondary)',
-            }}
+            className={cn(
+              'absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ring-2 ring-card',
+              statusDotStyles[character.status] ?? statusDotStyles.UNKNOWN,
+            )}
           />
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3
-            className="truncate text-[0.9375rem] font-semibold leading-tight"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
+          <h3 className="truncate text-[0.9375rem] font-semibold leading-tight text-foreground">
             {character.name}
           </h3>
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {/* Status badge */}
-            <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium"
-              style={{
-                backgroundColor: status.bg,
-                color: status.text,
-                borderRadius: 'var(--radius-full)',
-              }}
+            <Badge
+              variant="alive"
+              className={cn(
+                'gap-1.5',
+                statusStyles[character.status] ?? statusStyles.UNKNOWN,
+              )}
             >
               <span
-                className="h-1.5 w-1.5"
-                style={{
-                  backgroundColor: status.dot,
-                  borderRadius: 'var(--radius-full)',
-                }}
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  statusDotStyles[character.status] ?? statusDotStyles.UNKNOWN,
+                )}
               />
-              {status.label}
-            </span>
+              {statusLabels[character.status] ?? 'Unknown'}
+            </Badge>
 
             {/* Gender badge */}
-            <span
-              className="inline-flex items-center px-2.5 py-1 text-xs font-medium"
-              style={{
-                backgroundColor: 'var(--color-bg-tertiary)',
-                color: 'var(--color-text-secondary)',
-                borderRadius: 'var(--radius-full)',
-              }}
-            >
+            <Badge variant="secondary">
               {genderLabels[character.gender] ?? 'Unknown'}
-            </span>
+            </Badge>
           </div>
         </div>
       </div>
 
       {/* Description */}
-      <div
-        className="flex-1 px-5 pb-5"
-        style={{ borderTop: '1px solid var(--color-border-primary)' }}
-      >
-        <p
-          className="mt-3 line-clamp-2 text-[0.8125rem] leading-relaxed"
-          style={{ color: 'var(--color-text-secondary)' }}
-        >
+      <div className="flex-1 border-t px-5 pb-5">
+        <p className="mt-3 line-clamp-2 text-[0.8125rem] leading-relaxed text-muted-foreground">
           {character.description}
         </p>
       </div>

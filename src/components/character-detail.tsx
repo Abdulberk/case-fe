@@ -1,14 +1,27 @@
 'use client';
 
 import Image from 'next/image';
+import { motion } from 'framer-motion';
+import { X } from 'lucide-react';
 import { useCharacterQuery } from '@/generated/graphql';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
-const statusConfig: Record<string, { dot: string; bg: string; text: string; label: string }> = {
-  ALIVE: { dot: 'var(--color-status-alive)', bg: 'var(--color-status-alive-bg)', text: 'var(--color-status-alive-text)', label: 'Alive' },
-  DEAD: { dot: 'var(--color-status-dead)', bg: 'var(--color-status-dead-bg)', text: 'var(--color-status-dead-text)', label: 'Dead' },
-  UNKNOWN: { dot: 'var(--color-status-unknown)', bg: 'var(--color-status-unknown-bg)', text: 'var(--color-status-unknown-text)', label: 'Unknown' },
+const statusStyles: Record<string, string> = {
+  ALIVE: 'bg-[hsl(var(--status-alive-bg))] text-[hsl(var(--status-alive-text))]',
+  DEAD: 'bg-[hsl(var(--status-dead-bg))] text-[hsl(var(--status-dead-text))]',
+  UNKNOWN: 'bg-[hsl(var(--status-unknown-bg))] text-[hsl(var(--status-unknown-text))]',
 };
 
+const statusDotStyles: Record<string, string> = {
+  ALIVE: 'bg-[hsl(var(--status-alive))]',
+  DEAD: 'bg-[hsl(var(--status-dead))]',
+  UNKNOWN: 'bg-[hsl(var(--status-unknown))]',
+};
+
+const statusLabels: Record<string, string> = { ALIVE: 'Alive', DEAD: 'Dead', UNKNOWN: 'Unknown' };
 const genderLabels: Record<string, string> = { MALE: 'Male', FEMALE: 'Female', UNKNOWN: 'Unknown' };
 
 interface CharacterDetailProps {
@@ -23,81 +36,77 @@ export function CharacterDetail({ characterId, onClose }: CharacterDetailProps) 
   );
 
   const character = data?.character;
-  const status = character ? (statusConfig[character.status] ?? statusConfig.UNKNOWN) : null;
 
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ backgroundColor: 'var(--color-bg-overlay)' }}
+      <motion.div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
       >
         {/* Modal */}
-        <div
-          className="relative w-full max-w-lg overflow-hidden"
-          style={{
-            backgroundColor: 'var(--color-bg-secondary)',
-            borderRadius: 'var(--radius-xl)',
-            border: '1px solid var(--color-border-primary)',
-            boxShadow: 'var(--shadow-lg)',
-          }}
+        <motion.div
+          className="relative w-full max-w-lg overflow-hidden rounded-xl border bg-card shadow-lg"
           onClick={(e) => e.stopPropagation()}
+          initial={{ opacity: 0, scale: 0.9, y: 30 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{
+            type: 'spring',
+            stiffness: 350,
+            damping: 30,
+            mass: 0.8,
+          }}
         >
           {/* Close button */}
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center transition-colors"
-            style={{
-              backgroundColor: 'var(--color-bg-tertiary)',
-              borderRadius: 'var(--radius-full)',
-              color: 'var(--color-text-secondary)',
-            }}
+            className="absolute right-3 top-3 z-10 h-8 w-8 rounded-full"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
 
           {/* Loading */}
           {isLoading && (
             <div className="flex flex-col items-center gap-4 p-10">
-              <div className="skeleton h-24 w-24" style={{ borderRadius: 'var(--radius-full)' }} />
-              <div className="skeleton h-5 w-40" />
-              <div className="skeleton h-4 w-60" />
+              <Skeleton className="h-24 w-24 rounded-full" />
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-60" />
             </div>
           )}
 
           {/* Error */}
           {isError && (
             <div className="p-10 text-center">
-              <p className="text-sm" style={{ color: 'var(--color-status-dead-text)' }}>
+              <p className="text-sm text-destructive">
                 {error instanceof Error ? error.message : 'Character not found'}
               </p>
-              <button
-                onClick={onClose}
-                className="mt-4 px-4 py-2 text-sm font-medium"
-                style={{
-                  backgroundColor: 'var(--color-accent)',
-                  color: 'var(--color-accent-text)',
-                  borderRadius: 'var(--radius-md)',
-                }}
-              >
+              <Button onClick={onClose} className="mt-4" size="sm">
                 Close
-              </button>
+              </Button>
             </div>
           )}
 
           {/* Content */}
-          {character && status && (
+          {character && (
             <div className="p-8">
               <div className="flex flex-col items-center text-center">
-                <div
-                  className="relative h-24 w-24 overflow-hidden"
-                  style={{
-                    borderRadius: 'var(--radius-full)',
-                    boxShadow: '0 0 0 3px var(--color-border-primary)',
+                {/* Avatar */}
+                <motion.div
+                  className="relative h-24 w-24 overflow-hidden rounded-full ring-3 ring-border"
+                  initial={{ scale: 0, rotate: -10 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 260,
+                    damping: 20,
+                    delay: 0.1,
                   }}
                 >
                   <Image
@@ -108,60 +117,63 @@ export function CharacterDetail({ characterId, onClose }: CharacterDetailProps) 
                     sizes="96px"
                   />
                   <div
-                    className="absolute bottom-1 right-1 h-4 w-4"
-                    style={{
-                      backgroundColor: status.dot,
-                      borderRadius: 'var(--radius-full)',
-                      boxShadow: '0 0 0 2.5px var(--color-bg-secondary)',
-                    }}
+                    className={cn(
+                      'absolute bottom-1 right-1 h-4 w-4 rounded-full ring-[2.5px] ring-card',
+                      statusDotStyles[character.status] ?? statusDotStyles.UNKNOWN,
+                    )}
                   />
-                </div>
+                </motion.div>
 
-                <h2
-                  className="mt-5 text-xl font-bold"
-                  style={{ color: 'var(--color-text-primary)' }}
+                {/* Name */}
+                <motion.h2
+                  className="mt-5 text-xl font-bold text-foreground"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15, duration: 0.3 }}
                 >
                   {character.name}
-                </h2>
+                </motion.h2>
 
-                <div className="mt-3 flex items-center gap-2">
-                  <span
-                    className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium"
-                    style={{
-                      backgroundColor: status.bg,
-                      color: status.text,
-                      borderRadius: 'var(--radius-full)',
-                    }}
+                {/* Badges */}
+                <motion.div
+                  className="mt-3 flex items-center gap-2"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2, duration: 0.3 }}
+                >
+                  <Badge
+                    className={cn(
+                      'gap-1.5',
+                      statusStyles[character.status] ?? statusStyles.UNKNOWN,
+                    )}
                   >
                     <span
-                      className="h-1.5 w-1.5"
-                      style={{ backgroundColor: status.dot, borderRadius: 'var(--radius-full)' }}
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        statusDotStyles[character.status] ?? statusDotStyles.UNKNOWN,
+                      )}
                     />
-                    {status.label}
-                  </span>
-                  <span
-                    className="inline-flex items-center px-3 py-1 text-xs font-medium"
-                    style={{
-                      backgroundColor: 'var(--color-bg-tertiary)',
-                      color: 'var(--color-text-secondary)',
-                      borderRadius: 'var(--radius-full)',
-                    }}
-                  >
+                    {statusLabels[character.status] ?? 'Unknown'}
+                  </Badge>
+                  <Badge variant="secondary">
                     {genderLabels[character.gender] ?? 'Unknown'}
-                  </span>
-                </div>
+                  </Badge>
+                </motion.div>
 
-                <p
-                  className="mt-5 text-sm leading-relaxed"
-                  style={{ color: 'var(--color-text-secondary)' }}
+                {/* Description */}
+                <motion.p
+                  className="mt-5 text-sm leading-relaxed text-muted-foreground"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25, duration: 0.3 }}
                 >
                   {character.description}
-                </p>
+                </motion.p>
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </>
   );
 }
